@@ -131,19 +131,21 @@ pub fn is_gpu_sensor(s: &Value) -> bool {
 }
 
 fn sensor_chip(ui: &mut egui::Ui, s: &Value) {
+    // Largura máxima para que os chips se empilhem corretamente dentro do horizontal_wrapped.
+    let label_text = format!("{} · {}", as_text(&s["chip"]), as_text(&s["label"]));
+    let value_text = format!("{} {}", number(n(&s["value"]), ""), as_text(&s["unit"]));
     egui::Frame::new()
         .fill(Color32::from_rgb(17, 43, 76))
         .stroke(Stroke::new(1.0, LINE))
-        .corner_radius(6).inner_margin(6)
+        .corner_radius(6)
+        .inner_margin(egui::Margin::symmetric(8, 5))
         .show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(
-                    format!("{} · {}", as_text(&s["chip"]), as_text(&s["label"])),
-                ).size(11.0).color(MUTED));
-                ui.label(RichText::new(
-                    format!("{} {}", number(n(&s["value"]), ""), as_text(&s["unit"])),
-                ).size(12.0).strong().color(sensor_health(s).color()));
-            });
+            ui.set_max_width(180.0);
+            ui.add(egui::Label::new(
+                RichText::new(&label_text).size(10.0).color(MUTED),
+            ).truncate());
+            ui.label(RichText::new(&value_text).size(13.0).strong()
+                .color(sensor_health(s).color()));
         });
 }
 
@@ -307,7 +309,11 @@ pub fn network(ui: &mut egui::Ui, m: &Value, height: f32) {
 pub fn sensors(ui: &mut egui::Ui, m: &Value, height: f32) {
     card(ui, "06 / SENSORES FÍSICOS · HWMON", height, |ui| {
         if let Some(items) = m["sensors"].as_array().filter(|a| !a.is_empty()) {
-            ui.horizontal_wrapped(|ui| { for s in items { sensor_chip(ui, s); } });
+            let w = ui.available_width();
+            ui.horizontal_wrapped(|ui| {
+                ui.set_max_width(w);
+                for s in items { sensor_chip(ui, s); }
+            });
         } else { empty(ui); }
     });
 }
@@ -395,19 +401,29 @@ pub fn dashboard(ui: &mut egui::Ui, m: &Value, wide: bool) {
 }
 
 /// Barra de status do topo: logo, indicador ao vivo, toggle ultrawide e legenda de cores.
-pub fn header(ui: &mut egui::Ui, fresh: bool, ultrawide: &mut bool) {
+pub fn header(
+    ui: &mut egui::Ui,
+    fresh: bool,
+    ultrawide: &mut bool,
+    logo: Option<&egui::TextureHandle>,
+) {
     ui.horizontal_wrapped(|ui| {
-        // Logo embutida no binário — sem dependência de caminho em runtime.
+        // Quadro azul com logo ou fallback de texto.
         egui::Frame::new()
             .fill(Color32::from_rgb(16, 46, 89))
             .corner_radius(8)
             .inner_margin(4)
             .show(ui, |ui| {
-                ui.add(
-                    egui::Image::new(egui::include_image!("../../static/logohw.png"))
-                        .fit_to_exact_size(egui::vec2(40.0, 40.0))
-                        .corner_radius(6),
-                );
+                if let Some(tex) = logo {
+                    ui.add(
+                        egui::Image::from_texture(egui::load::SizedTexture::from_handle(tex))
+                            .fit_to_exact_size(egui::vec2(40.0, 40.0))
+                            .corner_radius(6),
+                    );
+                } else {
+                    // Fallback enquanto a textura não carrega.
+                    ui.label(RichText::new("ϟ").size(25.0).color(CYAN));
+                }
             });
         ui.vertical(|ui| {
             ui.label(RichText::new("HW / MONITOR").size(23.0).strong().color(WHITE));

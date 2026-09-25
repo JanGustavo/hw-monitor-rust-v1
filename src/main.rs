@@ -3,7 +3,7 @@ mod health;
 mod self_monitor;
 mod ui;
 
-use eframe::egui::{self, RichText};
+use eframe::egui::{self, RichText, TextureHandle};
 use serde_json::Value;
 use std::{sync::{Arc, RwLock}, time::{Duration, Instant}};
 
@@ -17,6 +17,7 @@ struct App {
     meter:       ProcessMeter,
     last_update: Instant,
     ultrawide:   bool,
+    logo:        Option<TextureHandle>,
 }
 
 impl App {
@@ -27,6 +28,27 @@ impl App {
             meter:       ProcessMeter::new(),
             last_update: Instant::now() - Duration::from_secs(2),
             ultrawide:   false,
+            logo:        None,
+        }
+    }
+
+    /// Carrega a logo PNG uma única vez e armazena o TextureHandle.
+    /// Chamado na primeira frame — o contexto egui já está disponível.
+    fn ensure_logo(&mut self, ctx: &egui::Context) {
+        if self.logo.is_some() { return; }
+        let bytes = include_bytes!("../static/logohw.png");
+        if let Ok(img) = image::load_from_memory(bytes) {
+            let rgba = img.to_rgba8();
+            let (w, h) = rgba.dimensions();
+            let ci = egui::ColorImage::from_rgba_unmultiplied(
+                [w as usize, h as usize],
+                rgba.as_raw(),
+            );
+            self.logo = Some(ctx.load_texture(
+                "app-logo",
+                ci,
+                egui::TextureOptions::LINEAR,
+            ));
         }
     }
 }
@@ -35,6 +57,7 @@ impl eframe::App for App {
     // Assinatura corrigida pelo usuário para o eframe atual.
     fn ui(&mut self, ui: &mut egui::Ui, _: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.ensure_logo(&ctx);
         ctx.request_repaint_after(Duration::from_secs(1));
 
         // Atualiza snapshot e custo próprio a cada segundo.
@@ -69,7 +92,7 @@ impl eframe::App for App {
                 })
                 .unwrap_or(false);
 
-            header(ui, fresh, &mut self.ultrawide);
+            header(ui, fresh, &mut self.ultrawide, self.logo.as_ref());
 
             egui::ScrollArea::vertical()
                 .id_salt("dashboard")
@@ -85,15 +108,21 @@ impl eframe::App for App {
                     ui.add_space(GAP);
 
                     // Custo do próprio processo.
-                    subcard(ui, "CUSTO DO PRÓPRIO MONITOR", |ui| {
+                    subcard(ui, "CONSUMO DO HW MONITOR", |ui| {
+                        let w = ui.available_width();
                         ui.horizontal_wrapped(|ui| {
+                            ui.set_max_width(w);
                             ui.label(RichText::new(format!("CPU  {}", pct(self.meter.cpu))).color(WHITE).strong());
                             ui.label(RichText::new(format!("RSS  {}", number(self.meter.rss_mib, " MiB"))).color(WHITE).strong());
                             ui.label(RichText::new(format!(
                                 "Threads  {}",
                                 self.meter.threads.map(|v| v.to_string()).unwrap_or_else(|| "—".into()),
                             )).color(WHITE).strong());
-                            ui.label(RichText::new("100% CPU = um núcleo · GUI + coletor").size(11.0).color(health::MUTED));
+                            ui.add(egui::Label::new(
+                                RichText::new("100% CPU = um núcleo · GUI + coletor")
+                                    .size(11.0)
+                                    .color(health::MUTED)
+                            ).wrap_mode(egui::TextWrapMode::Wrap));
                         });
                     });
 
@@ -106,10 +135,24 @@ impl eframe::App for App {
 }
 
 fn main() -> eframe::Result {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1440.0, 960.0])
+        .with_min_inner_size([480.0, 500.0]);
+
+    let icon_bytes = include_bytes!("../static/logohw.png");
+    if let Ok(img) = image::load_from_memory(icon_bytes) {
+        let rgba = img.into_rgba8();
+        let (width, height) = rgba.dimensions();
+        let icon = egui::IconData {
+            rgba: rgba.into_raw(),
+            width,
+            height,
+        };
+        viewport = viewport.with_icon(std::sync::Arc::new(icon));
+    }
+
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1440.0, 960.0])
-            .with_min_inner_size([480.0, 500.0]),
+        viewport,
         ..Default::default()
     };
     eframe::run_native("HW Monitor", options, Box::new(|_| Ok(Box::new(App::new()))))

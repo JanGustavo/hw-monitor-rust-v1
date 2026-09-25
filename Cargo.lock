@@ -1184,6 +1184,7 @@ version = "1.0.0"
 dependencies = [
  "axum",
  "eframe",
+ "image",
  "libc",
  "serde",
  "serde_json",
