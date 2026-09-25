@@ -1,5 +1,7 @@
 mod collector;
 mod health;
+mod history;
+mod insights;
 mod self_monitor;
 mod ui;
 
@@ -9,7 +11,7 @@ use std::{sync::{Arc, RwLock}, time::{Duration, Instant}};
 
 use health::{BG, LINE, WHITE};
 use self_monitor::ProcessMeter;
-use ui::cards::{dashboard, header, number, pct, subcard, GAP};
+use ui::cards::{dashboard, header, number, overview, pct, subcard, GAP};
 
 struct App {
     latest:      Arc<RwLock<Option<Value>>>,
@@ -18,6 +20,10 @@ struct App {
     last_update: Instant,
     ultrawide:   bool,
     logo:        Option<TextureHandle>,
+    history:     history::History,
+    paused:      bool,
+    minutes:     u64,
+    detailed:    bool,
 }
 
 impl App {
@@ -29,6 +35,10 @@ impl App {
             last_update: Instant::now() - Duration::from_secs(2),
             ultrawide:   false,
             logo:        None,
+            history:     history::History::new(),
+            paused:      false,
+            minutes:     5,
+            detailed:    false,
         }
     }
 
@@ -63,6 +73,7 @@ impl eframe::App for App {
         // Atualiza snapshot e custo próprio a cada segundo.
         if self.last_update.elapsed() >= Duration::from_secs(1) {
             if let Ok(guard) = self.latest.read() { self.snapshot = guard.clone(); }
+            if !self.paused { if let Some(m) = &self.snapshot { self.history.push(m); } }
             self.meter.update();
             self.last_update = Instant::now();
         }
@@ -94,18 +105,53 @@ impl eframe::App for App {
 
             header(ui, fresh, &mut self.ultrawide, self.logo.as_ref());
 
+            ui.horizontal_wrapped(|ui| {
+                ui.selectable_value(&mut self.detailed, false, "Visão geral");
+                ui.selectable_value(&mut self.detailed, true, "Detalhes");
+                if ui.button(if self.paused { "Retomar histórico" } else { "Pausar histórico" }).clicked() { self.paused = !self.paused; }
+                for period in [1, 5, 15] { ui.selectable_value(&mut self.minutes, period, format!("{period} min")); }
+            });
+            if let Some(m) = &self.snapshot {
+                let age = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok().map(|now| now.as_secs().saturating_sub(m["timestamp"].as_u64().unwrap_or(0))).unwrap_or(0);
+                ui.label(RichText::new(format!("{} · amostra recebida há {age} s", if age <= 4 { "● Ao vivo" } else { "● Dados antigos" })).color(if age <= 4 { health::GREEN } else { health::AMBER }));
+                let alerts = insights::alerts(m);
+                if alerts.is_empty() { ui.label("Nenhum alerta identificado nas leituras avaliáveis · limites genéricos."); }
+                else {
+                    ui.label(RichText::new(format!("{} alerta(s) · limites genéricos", alerts.len())).color(health::AMBER).strong());
+                    for alert in alerts.iter().take(5) {
+                        if ui.button(RichText::new(format!("{} · {}", alert.component, alert.detail)).color(if alert.critical { health::RED } else { health::AMBER })).clicked() { self.detailed = true; }
+                    }
+                }
+            }
+
             egui::ScrollArea::vertical()
                 .id_salt("dashboard")
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     if let Some(m) = &self.snapshot {
-                        dashboard(ui, m, self.ultrawide);
+                        if self.detailed { dashboard(ui, m, self.ultrawide); } else { overview(ui, m); }
+                        if self.detailed {
+                            subcard(ui, "TOP PROCESSOS · CPU / RSS (a cada 5 s)", |ui| {
+                                if let Some(items) = m["top_processes"].as_array() {
+                                    for process in items {
+                                        ui.label(format!("{} · PID {} · CPU {} · RSS {}", process["name"].as_str().unwrap_or("?"), process["pid"], pct(process["cpu_percent"].as_f64()), number(process["rss_mib"].as_f64(), " MiB")));
+                                    }
+                                    if items.is_empty() { ui.label("Aguardando leitura dos processos acessíveis…"); }
+                                }
+                            });
+                        }
                     } else {
                         ui.label(RichText::new("Aguardando a primeira amostra do coletor…")
                             .color(health::MUTED));
                     }
 
                     ui.add_space(GAP);
+                    subcard(ui, "TENDÊNCIAS", |ui| self.history.draw(ui, self.minutes));
+                    if let Some(m) = &self.snapshot {
+                        if ui.button("Copiar diagnóstico JSON (revise host e identificadores antes de compartilhar)").clicked() {
+                            ui.ctx().copy_text(serde_json::to_string_pretty(m).unwrap_or_default());
+                        }
+                    }
 
                     // Custo do próprio processo.
                     subcard(ui, "CONSUMO DO HW MONITOR", |ui| {

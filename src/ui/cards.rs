@@ -73,18 +73,14 @@ pub fn subcard(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::U
 }
 
 /// Card principal com borda, título e brilho decorativo no topo.
-pub fn card(ui: &mut egui::Ui, title: &str, height: f32, content: impl FnOnce(&mut egui::Ui)) {
+pub fn card(ui: &mut egui::Ui, title: &str, _height: f32, content: impl FnOnce(&mut egui::Ui)) {
     ui.push_id(title, |ui| {
         let response = egui::Frame::new().fill(PANEL).stroke(Stroke::new(1.0, LINE))
             .corner_radius(12).inner_margin(14).show(ui, |ui| {
                 ui.set_min_width(ui.available_width().max(0.0));
                 ui.label(RichText::new(title).color(Color32::from_rgb(168, 217, 251)).strong().size(12.0));
                 ui.add_space(10.0);
-                egui::ScrollArea::vertical()
-                    .id_salt("body")
-                    .max_height((height - 58.0).max(100.0))
-                    .auto_shrink([false, false])
-                    .show(ui, content);
+                content(ui);
             });
         let a = response.response.rect.left_top() + egui::vec2(17.0, 1.0);
         let b = a + egui::vec2(65.0, 0.0);
@@ -256,6 +252,8 @@ pub fn memory(ui: &mut egui::Ui, m: &Value, height: f32) {
             row(ui, "Swap usada / total", format!("{} / {}", gib(&r["swap_used_bytes"]), gib(&r["swap_total_bytes"])),
                 high(ratio(&r["swap_used_bytes"], &r["swap_total_bytes"]), 10.0, 50.0, 80.0));
             for (label, key) in [
+                ("Swap in · páginas/s", "swap_in_pages_s"),
+                ("Swap out · páginas/s", "swap_out_pages_s"),
                 ("Page faults/s",          "page_faults_s"),
                 ("Major faults/s",         "major_faults_s"),
                 ("Scan direto/s",          "pgscan_s"),
@@ -290,6 +288,7 @@ pub fn storage(ui: &mut egui::Ui, m: &Value, height: f32) {
                     row(ui, "Leitura / escrita",   format!("{} / {}", rate(&d["read_bytes_s"]),  rate(&d["write_bytes_s"])),  Health::Normal);
                     row(ui, "IOPS leitura / escrita", format!("{} / {}", number(n(&d["read_iops"]), ""), number(n(&d["write_iops"]), "")), Health::Normal);
                     row(ui, "Ocupação / fila",     format!("{} / {}", pct(n(&d["busy_percent"])), number(n(&d["average_queue_depth"]), "")), Health::Normal);
+                    row(ui, "Latência leitura / escrita", format!("{} / {}", number(n(&d["read_latency_ms"]), " ms"), number(n(&d["write_latency_ms"]), " ms")), Health::Normal);
                 });
             }
         }
@@ -338,6 +337,7 @@ pub fn system(ui: &mut egui::Ui, m: &Value, height: f32) {
         }
         row(ui, "Tarefas / executando", format!("{} / {}", as_text(&s["processes"]), as_text(&s["running"])), Health::Normal);
         row(ui, "TCP retransmitidos/s", number(n(&s["tcp_retransmits_s"]), ""), Health::Normal);
+        row(ui, "Processos bloqueados", number(n(&s["blocked_processes"]), ""), Health::Normal);
         row(ui, "Forks/s",             number(n(&s["forks_s"]), ""),            Health::Normal);
     });
 }
@@ -407,6 +407,43 @@ pub fn dashboard(ui: &mut egui::Ui, m: &Value, wide: bool) {
             ui.add_space(GAP);
         }
     }
+}
+
+/// Visão rápida com os detalhes técnicos na aba separada.
+pub fn overview(ui: &mut egui::Ui, m: &Value) {
+    let ram = ratio(&m["memory"]["used_bytes"], &m["memory"]["total_bytes"]);
+    let gpu = m["gpu"].as_array().and_then(|items| items.iter().find_map(|g| n(&g["usage_percent"])));
+    let temp = m["sensors"].as_array().and_then(|items| items.iter().filter(|s| s["kind"] == "temp").filter_map(|s| n(&s["value"])).reduce(f64::max));
+    let metrics = [("CPU", n(&m["cpu"]["usage_percent"]), "%", high(n(&m["cpu"]["usage_percent"]), 20.0, 85.0, 95.0)), ("Memória", ram, "%", high(ram, 60.0, 85.0, 95.0)), ("GPU", gpu, "%", low(gpu, 20.0)), ("Temperatura máx.", temp, " °C", high(temp, 55.0, 80.0, 90.0))];
+    let columns = if ui.available_width() >= 760.0 { 4 } else if ui.available_width() >= 390.0 { 2 } else { 1 };
+    for group in metrics.chunks(columns) {
+        ui.columns(group.len(), |cols| {
+            for (col, (title, value, unit, health)) in cols.iter_mut().zip(group) {
+                card(col, title, 0.0, |ui| {
+                    ui.label(RichText::new(number(*value, unit)).size(27.0).strong().color(health.color()));
+                    ui.label(RichText::new(if value.is_some() { match health { Health::Critical => "Crítico", Health::Watch => "Atenção", Health::Good => "Favorável", _ => "Normal" } } else { "Sem leitura disponível" }).size(11.0).color(MUTED));
+                });
+            }
+        });
+        ui.add_space(GAP);
+    }
+    let draw = |ui: &mut egui::Ui, disk: bool| {
+        if disk {
+            card(ui, "Armazenamento · resumo", 0.0, |ui| {
+                if let Some(f) = m["filesystems"].as_array().and_then(|a| a.iter().find(|f| f["mount"] == "/").or_else(|| a.first())) {
+                    row(ui, &as_text(&f["mount"]), format!("{} / {}", gib(&f["used_bytes"]), gib(&f["total_bytes"])), high(ratio(&f["used_bytes"], &f["total_bytes"]), 60.0, 80.0, 90.0));
+                } else { empty(ui); }
+            });
+        } else {
+            card(ui, "Rede · resumo", 0.0, |ui| {
+                if let Some(net) = m["network"].as_array().and_then(|a| a.iter().find(|n| n["link_up"] == true && n["name"] != "lo").or_else(|| a.first())) {
+                    row(ui, &as_text(&net["name"]), format!("RX {} · TX {}", rate(&net["rx_bytes_s"]), rate(&net["tx_bytes_s"])), Health::Normal);
+                } else { empty(ui); }
+            });
+        }
+    };
+    if ui.available_width() >= 720.0 { ui.columns(2, |cols| { draw(&mut cols[0], true); draw(&mut cols[1], false); }); }
+    else { draw(ui, true); ui.add_space(GAP); draw(ui, false); }
 }
 
 /// Barra de status do topo: logo, indicador ao vivo, toggle ultrawide e legenda de cores.
