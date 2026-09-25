@@ -33,16 +33,24 @@ pub fn ratio(a: &Value, b: &Value) -> Option<f64> {
 
 /// Par nome/valor com linha separadora fina.
 pub fn row(ui: &mut egui::Ui, name: &str, value: impl AsRef<str>, health: Health) {
-    ui.columns(2, |cols| {
-        cols[0].add(egui::Label::new(
-            RichText::new(name).size(12.0).color(MUTED),
+    if ui.available_width() < 310.0 {
+        // Em cards estreitos, duas colunas cortam valores como caminhos e modelos.
+        ui.label(RichText::new(name).size(11.0).color(MUTED));
+        ui.add(egui::Label::new(
+            RichText::new(value.as_ref()).size(12.0).color(health.color()).strong(),
         ).wrap_mode(egui::TextWrapMode::Wrap));
-        cols[1].with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-            ui.add(egui::Label::new(
-                RichText::new(value.as_ref()).size(12.0).color(health.color()).strong(),
+    } else {
+        ui.columns(2, |cols| {
+            cols[0].add(egui::Label::new(
+                RichText::new(name).size(12.0).color(MUTED),
             ).wrap_mode(egui::TextWrapMode::Wrap));
+            cols[1].with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                ui.add(egui::Label::new(
+                    RichText::new(value.as_ref()).size(12.0).color(health.color()).strong(),
+                ).wrap_mode(egui::TextWrapMode::Wrap));
+            });
         });
-    });
+    }
     let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
     ui.painter().line_segment(
         [rect.left_center(), rect.right_center()],
@@ -365,10 +373,11 @@ pub fn dashboard(ui: &mut egui::Ui, m: &Value, wide: bool) {
     let details  = 360.0;
     let auxiliary = 270.0;
 
-    if wide && width >= 1080.0 {
+    // Breakpoints seguem a largura útil de cada card, não a largura da janela.
+    if wide && width >= 1260.0 {
         ui.columns(3, |c| { cpu(&mut c[0], m, hero); gpu(&mut c[1], m, hero); memory(&mut c[2], m, hero); });
         ui.add_space(GAP);
-        if width >= 1800.0 {
+        if width >= 1950.0 {
             ui.columns(5, |c| {
                 storage(&mut c[0], m, details); network(&mut c[1], m, details);
                 sensors(&mut c[2], m, details); system(&mut c[3], m, details); battery(&mut c[4], m, details);
@@ -378,13 +387,13 @@ pub fn dashboard(ui: &mut egui::Ui, m: &Value, wide: bool) {
             ui.add_space(GAP);
             ui.columns(2, |c| { system(&mut c[0], m, auxiliary); battery(&mut c[1], m, auxiliary); });
         }
-    } else if width >= 1080.0 {
+    } else if width >= 1200.0 {
         ui.columns(2, |c| { cpu(&mut c[0], m, hero); gpu(&mut c[1], m, hero); });
         ui.add_space(GAP);
         ui.columns(3, |c| { memory(&mut c[0], m, details); storage(&mut c[1], m, details); network(&mut c[2], m, details); });
         ui.add_space(GAP);
         ui.columns(3, |c| { sensors(&mut c[0], m, auxiliary); system(&mut c[1], m, auxiliary); battery(&mut c[2], m, auxiliary); });
-    } else if width >= 720.0 {
+    } else if width >= 780.0 {
         ui.columns(2, |c| { cpu(&mut c[0], m, hero); gpu(&mut c[1], m, hero); });
         ui.add_space(GAP);
         ui.columns(2, |c| { memory(&mut c[0], m, details); storage(&mut c[1], m, details); });
@@ -436,7 +445,7 @@ pub fn header(
                 .color(if fresh { CYAN } else { AMBER }),
         );
         if ui.selectable_label(*ultrawide, RichText::new("ULTRAWIDE").size(11.0).strong())
-            .on_hover_text("Três cards principais em janelas largas; cinco cards inferiores a partir de 1800 pontos.")
+            .on_hover_text("Três cards principais em janelas largas; cinco cards inferiores a partir de 1950 pontos.")
             .clicked()
         {
             *ultrawide = !*ultrawide;

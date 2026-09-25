@@ -36,7 +36,7 @@ impl App {
     /// Chamado na primeira frame — o contexto egui já está disponível.
     fn ensure_logo(&mut self, ctx: &egui::Context) {
         if self.logo.is_some() { return; }
-        let bytes = include_bytes!("../static/logohw.png");
+        let bytes = include_bytes!("../static/icon-256.png");
         if let Ok(img) = image::load_from_memory(bytes) {
             let rgba = img.to_rgba8();
             let (w, h) = rgba.dimensions();
@@ -137,9 +137,11 @@ impl eframe::App for App {
 fn main() -> eframe::Result {
     let mut viewport = egui::ViewportBuilder::default()
         .with_inner_size([1440.0, 960.0])
-        .with_min_inner_size([480.0, 500.0]);
+        .with_min_inner_size([360.0, 480.0])
+        .with_app_id("io.github.jangustavo.HwMonitor")
+        .with_title("HW Monitor");
 
-    let icon_bytes = include_bytes!("../static/logohw.png");
+    let icon_bytes = include_bytes!("../static/icon-256.png");
     if let Ok(img) = image::load_from_memory(icon_bytes) {
         let rgba = img.into_rgba8();
         let (width, height) = rgba.dimensions();

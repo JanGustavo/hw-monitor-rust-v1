@@ -2,7 +2,7 @@
 
 > Monitor de hardware e sistema para Linux, escrito em Rust com GUI nativa via `egui/eframe`.
 
-![badge](https://github.com/USUARIO/hw-monitor-rust-v1/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/JanGustavo/hw-monitor-rust-v1/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JanGustavo/hw-monitor-rust-v1/actions/workflows/ci.yml)
 
 ---
 
@@ -53,6 +53,19 @@ cargo run --release --bin hw-monitor-native
 cargo run --release --bin hw-monitor-web
 ```
 
+### Instalar no menu de aplicativos (ícone no dock)
+
+```bash
+bash scripts/install-user.sh
+```
+
+O instalador compila a versão release e copia o binário e o ícone para a sua
+conta. Depois, abra **HW Monitor** pelo menu de aplicativos. No Wayland, o
+`app_id` da janela corresponde ao nome do arquivo `.desktop`; ao executar pelo
+`cargo run` sem instalar o lançador, o dock pode mostrar um ícone genérico.
+Feche as janelas já abertas e inicie pelo menu para verificar o ícone. A imagem
+no cabeçalho e o ícone da janela são carregados do mesmo desenho, em 256 px.
+
 > Os dois binários são processos separados e independentes. Cada um roda seu próprio coletor; não há comunicação entre eles.
 
 ---
@@ -83,7 +96,8 @@ src/
 src/bin/
 └── web.rs            # Servidor HTTP + WebSocket (reutiliza collector via lib)
 static/
-├── logohw.png        # Logo da aplicação (embutida no binário)
+├── logohw.png        # Arte original
+├── icon-256.png      # Ícone da janela e do cabeçalho
 └── index.html        # Frontend web (servido pelo hw-monitor-web)
 ```
 

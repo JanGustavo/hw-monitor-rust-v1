@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=HW Monitor
+GenericName=Hardware Monitor
+Comment=Telemetria de hardware e sistema em tempo real
+Exec=hw-monitor-native
+Icon=io.github.jangustavo.HwMonitor
+Terminal=false
+Categories=System;Monitor;
