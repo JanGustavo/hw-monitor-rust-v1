@@ -23,6 +23,14 @@
 
 > **Limitações v1:** Limites de saúde são genéricos (não calibrados por modelo). Temperatura é colorida apenas quando reconhecida como sensor de GPU ou CPU. Clock de GPU requer suporte do driver via DRM sysfs.
 
+## Implementação pós auditoria · três fases
+
+1. **Clareza:** visão geral compacta e detalhes separados nas duas interfaces. Alertas mostram componente, leitura, limite genérico e gravidade; leitura ausente não gera um estado saudável. Os cards nativos deixam a página controlar a rolagem.
+2. **Tendências:** CPU, RAM, GPU e maior temperatura lida, com mínimo, média e pico nos últimos 1, 5 ou 15 minutos. As últimas 900 amostras ficam somente em memória; pausar congela o histórico, não a coleta ou o resumo ao vivo.
+3. **Diagnóstico:** ranking dos processos acessíveis via `/proc`, amostrado a cada 5 segundos, com CPU relativa a um núcleo e RSS. No modo web é possível buscar/ordenar por CPU ou memória e baixar o snapshot JSON; na GUI nativa, copiar o JSON. **Revise hostname, dispositivos e nomes dos processos antes de compartilhar.**
+
+O servidor web continua restrito a `127.0.0.1`. Preferências, limites personalizados e histórico persistente ficam para versões posteriores. A lista de processos depende das permissões normais de leitura de `/proc`; processos inacessíveis não aparecem. A temperatura máxima é informativa e não tem uma classificação universal, pois sensores diferentes exigem limites distintos.
+
 ---
 
 ## Instalação e execução
@@ -86,11 +94,13 @@ ps -p $(pgrep -f hw-monitor-native) -o pid,%cpu,rss,nlwp,comm
 
 ```
 src/
-├── lib.rs            # Expõe collector e health como biblioteca compartilhada
+├── lib.rs            # Expõe collector, health e insights
 ├── main.rs           # Inicialização da janela nativa (App + eframe)
 ├── collector.rs      # Loop de coleta Linux (/proc, /sys, hwmon, DRM)
 ├── health.rs         # Paleta de cores e regras de classificação de saúde
 ├── self_monitor.rs   # Medição do próprio processo (/proc/self/stat|status)
+├── history.rs        # Amostras recentes e tendências na GUI nativa
+├── insights.rs       # Alertas descritivos e limiares genéricos
 └── ui/
     └── cards.rs      # Cards, gauge, row, dashboard, header (toda a UI)
 src/bin/
